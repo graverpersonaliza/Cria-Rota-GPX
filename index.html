@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trilha — Google Maps para GPX/FIT</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --paper: #EAE3D2;
+    --paper-deep: #DCD3B8;
+    --paper-card: #F2ECDC;
+    --ink: #1E2A22;
+    --ink-soft: #57645A;
+    --trail: #2F6B4F;
+    --trail-deep: #1F4D38;
+    --blaze: #D8602A;
+    --blaze-deep: #B14A1C;
+    --line: #BFB594;
+    --danger: #A8392B;
+
+    --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg, rgba(191,181,148,0.18) 0px, rgba(191,181,148,0.18) 1px, transparent 1px, transparent 28px);
+    color: var(--ink);
+    font-family: var(--font-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--trail-deep); }
+
+  .app {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+  }
+
+  /* ---------- HERO ---------- */
+  .hero {
+    text-align: center;
+    padding: 28px 8px 18px;
+  }
+
+  .hero-mark {
+    width: 220px;
+    height: 90px;
+    margin: 0 auto 14px;
+  }
+
+  .hero-mark .contour {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 1.2;
+  }
+
+  .hero-mark .route {
+    fill: none;
+    stroke: var(--blaze);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 260;
+    stroke-dashoffset: 260;
+    animation: draw 1.6s ease-out forwards;
+  }
+
+  .hero-mark .dot {
+    fill: var(--blaze-deep);
+    opacity: 0;
+    animation: dotmove 1.6s ease-out forwards;
+  }
+
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  @keyframes dotmove {
+    0% { opacity: 0; }
+    3% { opacity: 1; }
+    97% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-mark .route { animation: none; stroke-dashoffset: 0; }
+    .hero-mark .dot { animation: none; opacity: 0; }
+  }
+
+  h1.brand {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 30px;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+
+  .tagline {
+    color: var(--ink-soft);
+    font-size: 15px;
+    margin: 0 auto;
+    max-width: 440px;
+  }
+
+  /* ---------- PANEL ---------- */
+  .panel {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-top: 26px;
+    overflow: hidden;
+  }
+
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+    background: var(--paper-deep);
+  }
+
+  .tab {
+    flex: 1 1 auto;
+    min-width: 120px;
+    padding: 13px 10px;
+    text-align: center;
+    font-family: var(--font-display);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    cursor: pointer;
+    border: none;
+    background: none;
+    border-bottom: 2px solid transparent;
+  }
+
+  .tab:hover { color: var(--ink); }
+
+  .tab[aria-selected="true"] {
+    color: var(--trail-deep);
+    border-bottom-color: var(--blaze);
+    background: var(--paper-card);
+  }
+
+  .tab:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .dropzone:focus-visible {
+    outline: 2px solid var(--trail-deep);
+    outline-offset: 2px;
+  }
+
+  .tab-content { padding: 22px; display: none; }
+  .tab-content.active { display: block; }
+
+  .hint {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    margin: 0 0 14px;
+  }
+
+  .dropzone {
+    border: 1.5px dashed var(--line);
+    border-radius: var(--radius);
+    padding: 26px 16px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--paper);
+    transition: border-color .15s, background .15s;
+  }
+
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--trail);
+    background: #F6F1E2;
+  }
+
+  .dropzone .icon { font-size: 22px; display: block; margin-bottom: 6px; }
+  .dropzone .filename {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--trail-deep);
+    margin-top: 8px;
+    word-break: break-all;
+  }
+
+  textarea, input[type="text"] {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    color: var(--ink);
+    resize: vertical;
+  }
+
+  textarea { min-height: 92px; }
+
+  input[type="text"].name-input { font-family: var(--font-body); }
+
+  .options-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    padding: 4px 22px 22px;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label.field-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+
+  select {
+    font-family: var(--font-body);
+    font-size: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  .checkbox-row {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .checkbox-row input { margin-top: 3px; }
+
+  .action-row {
+    padding: 0 22px 22px;
+  }
+
+  button.primary {
+    width: 100%;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: .01em;
+    padding: 14px 18px;
+    border: none;
+    border-radius: 8px;
+    background: var(--trail);
+    color: #fff;
+    cursor: pointer;
+    transition: background .15s, transform .05s;
+  }
+
+  button.primary:hover { background: var(--trail-deep); }
+  button.primary:active { transform: scale(0.99); }
+  button.primary:disabled { background: var(--ink-soft); cursor: progress; }
+
+  .status {
+    margin: 0 22px 18px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    display: none;
+  }
+  .status.show { display: block; }
+  .status.info { background: #EFE9D4; color: var(--ink-soft); }
+  .status.error { background: #F4E1DC; color: var(--danger); }
+
+  .result {
+    margin: 0 22px 22px;
+    padding: 18px;
+    border-radius: var(--radius);
+    background: var(--paper-deep);
+    display: none;
+  }
+  .result.show { display: block; }
+
+  .result-stats {
+    display: flex;
+    gap: 22px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+
+  .stat .num {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--trail-deep);
+    display: block;
+  }
+  .stat .label {
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+
+  .preview-svg {
+    width: 100%;
+    height: 130px;
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 14px;
+  }
+  .preview-svg path { fill: none; stroke: var(--blaze); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  .preview-svg circle { fill: var(--trail-deep); }
+
+  .downloads { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .dl-btn {
+    flex: 1 1 160px;
+    text-align: center;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1.5px solid var(--trail);
+    color: var(--trail-deep);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 14px;
+    text-decoration: none;
+    background: var(--paper-card);
+  }
+  .dl-btn:hover { background: var(--trail); color: #fff; }
+
+  footer.notes {
+    margin-top: 26px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    padding: 0 4px;
+  }
+  footer.notes summary { cursor: pointer; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+  footer.notes ul { margin: 8px 0 0; padding-left: 18px; }
+  footer.notes li { margin-bottom: 6px; }
+
+  @media (max-width: 480px) {
+    .options-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="hero">
+    <svg class="hero-mark" viewBox="0 0 220 90" aria-hidden="true">
+      <path class="contour" d="M5,70 Q40,40 80,62 T160,55 T215,68" />
+      <path class="contour" d="M2,80 Q50,58 95,76 T170,68 T218,80" />
+      <path class="route" d="M14,58 C40,20 70,75 100,35 C130,5 160,55 205,22" />
+      <circle class="dot" r="4" cx="205" cy="22" />
+    </svg>
+    <h1 class="brand">Trilha</h1>
+    <p class="tagline">Converte uma rota do Google Maps em arquivos GPX e FIT prontos para o Strava, IGPSport ou Garmin — direto no navegador, sem instalar nada.</p>
+  </div>
+
+  <div class="panel">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="kml">Arquivo KML</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="url">Link do Maps</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="points">Pontos manuais</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="gpx">Arquivo GPX</button>
+    </div>
+
+    <div class="tab-content active" data-tab="kml">
+      <p class="hint">No Google My Maps (mymaps.google.com): Menu ☰ → <strong>Exportar para KML/KMZ</strong> → exporte como <strong>KML</strong>. É a forma mais precisa, porque já traz o trajeto seguindo as ruas exatamente como no mapa.</p>
+      <div class="dropzone" id="dropzone-kml" tabindex="0" role="button">
+        <span class="icon">📍</span>
+        <span class="text">Arraste o arquivo .kml aqui ou clique para escolher</span>
+        <div class="filename" id="filename-kml"></div>
+        <input type="file" id="file-kml" accept=".kml" hidden>
+      </div>
+    </div>
+
+    <div class="tab-content" data-tab="url">
+      <p class="hint">Cole o link completo de uma rota do Google Maps (com origem e destino). Se o link for curto (maps.app.goo.gl), abra-o no navegador primeiro e copie o endereço completo da barra de endereços.</p>
+      <textarea id="input-url" placeholder="https://www.google.com/maps/dir/Origem/Destino/@..."></textarea>
+    </div>
+
+    <div class="tab-content" data-tab="points">
+      <p class="hint">Uma coordenada por linha (ou separadas por ponto e vírgula), no formato latitude,longitude.</p>
+      <textarea id="input-points" placeholder="-23.5614,-46.6559&#10;-23.5605,-46.6540&#10;-23.5590,-46.6520"></textarea>
+    </div>
+
+    <div class="tab-content" data-tab="gpx">
+      <p class="hint">Já tem um arquivo GPX? Solte aqui para gerar o .FIT correspondente (e um .GPX limpo, se precisar).</p>
+      <div class="dropzone" id="dropzone-gpx" tabindex="0" role="button">
+        <span class="icon">🧭</span>
+        <span class="text">Arraste o arquivo .gpx aqui ou clique para escolher</span>
+        <div class="filename" id="filename-gpx"></div>
+        <input type="file" id="file-gpx" accept=".gpx" hidden>
+      </div>
+    </div>
+
+    <div class="options-row">
+      <div class="field">
+        <label class="field-label" for="routeName">Nome da rota</label>
+        <input type="text" class="name-input" id="routeName" value="Minha rota" maxlength="40">
+      </div>
+      <div class="field">
+        <label class="field-label" for="sport">Modalidade</label>
+        <select id="sport">
+          <option value="cycling">Ciclismo</option>
+          <option value="running">Corrida</option>
+          <option value="walking">Caminhada</option>
+        </select>
+      </div>
+      <div class="checkbox-row" id="routeRoadsRow">
+        <input type="checkbox" id="routeRoads">
+        <label for="routeRoads">Ajustar trajeto às vias automaticamente (recalcula pelo OSRM — requer internet; use só para "Link do Maps" e "Pontos manuais")</label>
+      </div>
+    </div>
+
+    <div class="action-row">
+      <button class="primary" id="generateBtn">Gerar arquivos GPX e FIT</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="result" id="result">
+      <div class="result-stats">
+        <div class="stat"><span class="num" id="statDistance">—</span><span class="label">distância</span></div>
+        <div class="stat"><span class="num" id="statPoints">—</span><span class="label">pontos</span></div>
+      </div>
+      <svg class="preview-svg" id="previewSvg" viewBox="0 0 400 130"></svg>
+      <div class="downloads">
+        <a class="dl-btn" id="downloadGpx" download>Baixar .GPX</a>
+        <a class="dl-btn" id="downloadFit" download>Baixar .FIT</a>
+      </div>
+    </div>
+  </div>
+
+  <footer class="notes">
+    <details>
+      <summary>Limitações e onde importar</summary>
+      <ul>
+        <li><strong>Strava:</strong> app ou site → Rotas → Criar rota → Importar GPX.</li>
+        <li><strong>IGPSport App:</strong> tela de rotas → importar arquivo (.fit ou .gpx).</li>
+        <li><strong>Garmin/ciclocomputador via USB:</strong> copie o .fit para a pasta Garmin/NewFiles ou Courses do dispositivo.</li>
+        <li>O link do Google Maps não traz o desenho exato da via (isso é calculado pelo navegador do Google). Por padrão os pontos extraídos são ligados em linha reta; marque "ajustar trajeto às vias" para recalcular pelas ruas usando um serviço de roteamento aberto (OSRM), com qualidade um pouco diferente do trajeto exato do Google. Para fidelidade máxima, use a aba "Arquivo KML".</li>
+        <li>Tudo é processado localmente no seu navegador — nenhum arquivo é enviado a servidor algum, exceto as chamadas opcionais de roteamento/geocodificação quando você marca a opção de ajustar às vias.</li>
+      </ul>
+    </details>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // =========================================================================
+  // 1. CONSTANTES DO FORMATO FIT
+  // =========================================================================
+  const BaseType = {
+    ENUM: 0x00, SINT8: 0x01, UINT8: 0x02, STRING: 0x07, UINT8Z: 0x0A, BYTE: 0x0D,
+    SINT16: 0x83, UINT16: 0x84, SINT32: 0x85, UINT32: 0x86,
+    FLOAT32: 0x88, FLOAT64: 0x89, UINT16Z: 0x8B, UINT32Z: 0x8C,
+  };
+
+  const CRC_TABLE = [
+    0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
+    0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400,
+  ];
+
+  function crc16(bytes) {
+    let crc = 0;
+    for (let i = 0; i < bytes.length; i++) {
+      const byte = bytes[i];
+      let tmp = CRC_TABLE[crc & 0xF];
+      crc = (crc >> 4) & 0x0FFF;
+      crc = crc ^ tmp ^ CRC_TABLE[byte & 0xF];
+      tmp = CRC_TABLE[crc & 0xF];
+      crc = (crc >> 4) & 0x0FFF;
+      crc = crc ^ tmp ^ CRC_TABLE[(byte >> 4) & 0xF];
+    }
+    return crc;
+  }
+
+  const FIT_EPOCH_OFFSET = 631065600; // segundos entre 1970-01-01 e 1989-12-31 (epoch do FIT)
+  const SEMI = Math.pow(2, 31) / 180;
+  const degToSemicircles = (deg) => Math.round(deg * SEMI);
+  const unixSecToFit = (sec) => sec - FIT_EPOCH_OFFSET;
+
+  function encodeFitString(str, size) {
+    const enc = new TextEncoder();
+    let bytes = Array.from(enc.encode(str || ''));
+    if (bytes.length > size - 1) bytes = bytes.slice(0, size - 1);
+    while (bytes.length < size) bytes.push(0);
+    return bytes;
+  }
+
+  const FIELD_SIZE = {
+    [BaseType.ENUM]: 1, [BaseType.SINT8]: 1, [BaseType.UINT8]: 1, [BaseType.UINT8Z]: 1, [BaseType.BYTE]: 1,
+    [BaseType.SINT16]: 2, [BaseType.UINT16]: 2, [BaseType.UINT16Z]: 2,
+    [BaseType.SINT32]: 4, [BaseType.UINT32]: 4, [BaseType.UINT32Z]: 4, [BaseType.FLOAT32]: 4,
+  };
+
+  class ByteWriter {
+    constructor() { this.bytes = []; }
+    u8(v) { this.bytes.push(v & 0xFF); }
+    u16(v) { this.bytes.push(v & 0xFF, (v >> 8) & 0xFF); }
+    u32(v) {
+      const b = new Uint8Array(4);
+      new DataView(b.buffer).setUint32(0, v >>> 0, true);
+      this.bytes.push(b[0], b[1], b[2], b[3]);
+    }
+    i32(v) {
+      const b = new Uint8Array(4);
+      new DataView(b.buffer).setInt32(0, v | 0, true);
+      this.bytes.push(b[0], b[1], b[2], b[3]);
+    }
+    raw(arr) { for (let i = 0; i < arr.length; i++) this.bytes.push(arr[i]); }
+    toUint8Array() { return new Uint8Array(this.bytes); }
+  }
+
+  class FitBuilder {
+    constructor() { this.writer = new ByteWriter(); this.defined = new Set(); }
+
+    defineIfNeeded(localId, globalId, fields) {
+      if (this.defined.has(localId)) return;
+      this.defined.add(localId);
+      this.writer.u8(0x40 | localId);
+      this.writer.u8(0);
+      this.writer.u8(0);
+      this.writer.u16(globalId);
+      this.writer.u8(fields.length);
+      for (const f of fields) {
+        this.writer.u8(f.id);
+        this.writer.u8(f.size != null ? f.size : FIELD_SIZE[f.type]);
+        this.writer.u8(f.type);
+      }
+    }
+
+    writeData(localId, values) {
+      this.writer.u8(localId & 0x0F);
+      for (const v of values) {
+        switch (v.type) {
+          case BaseType.ENUM: case BaseType.UINT8: case BaseType.UINT8Z: case BaseType.BYTE:
+            this.writer.u8(v.value); break;
+          case BaseType.UINT16: case BaseType.UINT16Z:
+            this.writer.u16(v.value); break;
+          case BaseType.SINT32:
+            this.writer.i32(v.value); break;
+          case BaseType.UINT32: case BaseType.UINT32Z:
+            this.writer.u32(v.value); break;
+          case BaseType.STRING:
+            this.writer.raw(v.value); break;
+          default:
+            throw new Error('Tipo de campo não suportado.');
+        }
+      }
+    }
+
+    toUint8Array() { return this.writer.toUint8Array(); }
+  }
+
+  const SPORT_ENUM = { cycling: 2, running: 1, walking: 11 };
+
+  function buildFitCourse(points, { sport = 'cycling', name = 'Rota' } = {}) {
+    const sportValue = SPORT_ENUM[sport] != null ? SPORT_ENUM[sport] : 2;
+    const nowSec = unixSecToFit(Math.floor(Date.now() / 1000));
+    const b = new FitBuilder();
+
+    b.defineIfNeeded(0, 0, [
+      { id: 0, type: BaseType.ENUM }, { id: 1, type: BaseType.UINT16 },
+      { id: 2, type: BaseType.UINT16 }, { id: 4, type: BaseType.UINT32 },
+      { id: 3, type: BaseType.UINT32 },
+    ]);
+    b.writeData(0, [
+      { type: BaseType.ENUM, value: 6 }, { type: BaseType.UINT16, value: 255 },
+      { type: BaseType.UINT16, value: 0 }, { type: BaseType.UINT32, value: nowSec },
+      { type: BaseType.UINT32, value: 0x12345678 },
+    ]);
+
+    b.defineIfNeeded(1, 31, [
+      { id: 4, type: BaseType.ENUM }, { id: 5, type: BaseType.STRING, size: 16 },
+    ]);
+    b.writeData(1, [
+      { type: BaseType.ENUM, value: sportValue },
+      { type: BaseType.STRING, value: encodeFitString(name, 16) },
+    ]);
+
+    b.defineIfNeeded(2, 21, [
+      { id: 253, type: BaseType.UINT32 }, { id: 0, type: BaseType.ENUM }, { id: 1, type: BaseType.ENUM },
+    ]);
+    b.writeData(2, [
+      { type: BaseType.UINT32, value: nowSec }, { type: BaseType.ENUM, value: 0 }, { type: BaseType.ENUM, value: 0 },
+    ]);
+
+    b.defineIfNeeded(3, 20, [
+      { id: 253, type: BaseType.UINT32 }, { id: 0, type: BaseType.SINT32 },
+      { id: 1, type: BaseType.SINT32 }, { id: 5, type: BaseType.UINT32 },
+    ]);
+
+    let distance = 0, prev = null, ts = nowSec;
+    const meta = [];
+    for (const [lat, lon] of points) {
+      if (prev) distance += haversine(prev, [lat, lon]);
+      prev = [lat, lon];
+      b.writeData(3, [
+        { type: BaseType.UINT32, value: ts },
+        { type: BaseType.SINT32, value: degToSemicircles(lat) },
+        { type: BaseType.SINT32, value: degToSemicircles(lon) },
+        { type: BaseType.UINT32, value: Math.round(distance * 100) },
+      ]);
+      meta.push({ lat, lon, distance, ts });
+      ts += 1;
+    }
+
+    b.defineIfNeeded(4, 32, [
+      { id: 1, type: BaseType.UINT32 }, { id: 2, type: BaseType.SINT32 }, { id: 3, type: BaseType.SINT32 },
+      { id: 4, type: BaseType.UINT32 }, { id: 5, type: BaseType.ENUM }, { id: 6, type: BaseType.STRING, size: 16 },
+    ]);
+    const first = meta[0], last = meta[meta.length - 1];
+    b.writeData(4, [
+      { type: BaseType.UINT32, value: first.ts },
+      { type: BaseType.SINT32, value: degToSemicircles(first.lat) },
+      { type: BaseType.SINT32, value: degToSemicircles(first.lon) },
+      { type: BaseType.UINT32, value: 0 }, { type: BaseType.ENUM, value: 24 },
+      { type: BaseType.STRING, value: encodeFitString('Inicio', 16) },
+    ]);
+    b.writeData(4, [
+      { type: BaseType.UINT32, value: last.ts },
+      { type: BaseType.SINT32, value: degToSemicircles(last.lat) },
+      { type: BaseType.SINT32, value: degToSemicircles(last.lon) },
+      { type: BaseType.UINT32, value: Math.round(last.distance * 100) }, { type: BaseType.ENUM, value: 25 },
+      { type: BaseType.STRING, value: encodeFitString('Fim', 16) },
+    ]);
+
+    b.writeData(2, [
+      { type: BaseType.UINT32, value: ts }, { type: BaseType.ENUM, value: 0 }, { type: BaseType.ENUM, value: 4 },
+    ]);
+
+    b.defineIfNeeded(5, 19, [
+      { id: 253, type: BaseType.UINT32 }, { id: 2, type: BaseType.UINT32 },
+      { id: 3, type: BaseType.SINT32 }, { id: 4, type: BaseType.SINT32 },
+      { id: 5, type: BaseType.SINT32 }, { id: 6, type: BaseType.SINT32 },
+      { id: 7, type: BaseType.UINT32 }, { id: 8, type: BaseType.UINT32 }, { id: 9, type: BaseType.UINT32 },
+    ]);
+    const elapsed = ts - nowSec;
+    b.writeData(5, [
+      { type: BaseType.UINT32, value: ts }, { type: BaseType.UINT32, value: nowSec },
+      { type: BaseType.SINT32, value: degToSemicircles(first.lat) },
+      { type: BaseType.SINT32, value: degToSemicircles(first.lon) },
+      { type: BaseType.SINT32, value: degToSemicircles(last.lat) },
+      { type: BaseType.SINT32, value: degToSemicircles(last.lon) },
+      { type: BaseType.UINT32, value: elapsed * 1000 }, { type: BaseType.UINT32, value: elapsed * 1000 },
+      { type: BaseType.UINT32, value: Math.round(last.distance * 100) },
+    ]);
+
+    const records = b.toUint8Array();
+
+    const header = new ByteWriter();
+    header.u8(12);
+    header.u8((2 << 4) | 3);
+    header.u16(21 * 100 + 60);
+    header.u32(records.length);
+    header.raw([0x2E, 0x46, 0x49, 0x54]); // ".FIT"
+    const headerBytes = header.toUint8Array();
+
+    const withoutCrc = new Uint8Array(headerBytes.length + records.length);
+    withoutCrc.set(headerBytes, 0);
+    withoutCrc.set(records, headerBytes.length);
+
+    const crc = crc16(withoutCrc);
+    const crcBytes = new Uint8Array(2);
+    new DataView(crcBytes.buffer).setUint16(0, crc, true);
+
+    const full = new Uint8Array(withoutCrc.length + 2);
+    full.set(withoutCrc, 0);
+    full.set(crcBytes, withoutCrc.length);
+
+    return { bytes: full, distance: last.distance };
+  }
+
+  // =========================================================================
+  // 2. UTILITÁRIOS GEOGRÁFICOS E GPX
+  // =========================================================================
+  function haversine([lat1, lon1], [lat2, lon2]) {
+    const R = 6371000, toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function totalDistance(points) {
+    let d = 0;
+    for (let i = 1; i < points.length; i++) d += haversine(points[i - 1], points[i]);
+    return d;
+  }
+
+  function escapeXml(s) {
+    return String(s).replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+  }
+
+  function buildGpx(points, name) {
+    const trkpts = points.map(([lat, lon]) => `      <trkpt lat="${lat}" lon="${lon}"></trkpt>`).join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Trilha" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk>\n    <name>${escapeXml(name)}</name>\n    <trkseg>\n${trkpts}\n    </trkseg>\n  </trk>\n</gpx>\n`;
+  }
+
+  // =========================================================================
+  // 3. PARSERS DE ENTRADA
+  // =========================================================================
+  function parseKmlText(text) {
+    const dom = new DOMParser().parseFromString(text, 'text/xml');
+    if (dom.querySelector('parsererror')) throw new Error('Não consegui ler esse KML. Confirme que o arquivo não está corrompido.');
+    const coordEls = dom.getElementsByTagName('coordinates');
+    const points = [];
+    for (const el of coordEls) {
+      const chunks = el.textContent.trim().split(/\s+/);
+      for (const c of chunks) {
+        const parts = c.split(',');
+        if (parts.length >= 2) {
+          const lon = parseFloat(parts[0]), lat = parseFloat(parts[1]);
+          if (!isNaN(lat) && !isNaN(lon)) points.push([lat, lon]);
+        }
+      }
+    }
+    if (!points.length) throw new Error('Não encontrei coordenadas nesse KML. Confirme que a camada exportada é uma rota (linha), não só marcadores soltos.');
+    return points;
+  }
+
+  function parseGpxText(text) {
+    const dom = new DOMParser().parseFromString(text, 'text/xml');
+    if (dom.querySelector('parsererror')) throw new Error('Não consegui ler esse GPX. Confirme que o arquivo não está corrompido.');
+    const points = [];
+    for (const tag of ['trkpt', 'rtept']) {
+      const els = dom.getElementsByTagName(tag);
+      for (const el of els) {
+        const lat = parseFloat(el.getAttribute('lat')), lon = parseFloat(el.getAttribute('lon'));
+        if (!isNaN(lat) && !isNaN(lon)) points.push([lat, lon]);
+      }
+      if (points.length) break;
+    }
+    if (!points.length) throw new Error('Não encontrei pontos de trajeto (trkpt/rtept) nesse GPX.');
+    return points;
+  }
+
+  function parsePointsText(text) {
+    const points = [];
+    const chunks = text.split(/[;\n]/);
+    for (const raw of chunks) {
+      const chunk = raw.trim();
+      if (!chunk) continue;
+      const parts = chunk.split(',');
+      if (parts.length < 2) throw new Error(`Linha inválida: "${chunk}". Use o formato latitude,longitude.`);
+      const lat = parseFloat(parts[0].trim()), lon = parseFloat(parts[1].trim());
+      if (isNaN(lat) || isNaN(lon)) throw new Error(`Não consegui ler a coordenada "${chunk}".`);
+      points.push([lat, lon]);
+    }
+    if (points.length < 2) throw new Error('Informe pelo menos 2 coordenadas.');
+    return points;
+  }
+
+  function parseMapsUrlRaw(urlStr) {
+    let u;
+    try { u = new URL(urlStr.trim()); } catch (e) { throw new Error('Isso não parece ser um link válido.'); }
+    if (/goo\.gl$/i.test(u.hostname)) {
+      throw new Error('Esse é um link curto. Abra-o no navegador, copie o endereço completo da barra (deve conter "/maps/dir/") e cole aqui.');
+    }
+    const path = decodeURIComponent(u.pathname);
+    const m = path.match(/\/dir\/(.+)/);
+    if (!m) {
+      const placeMatch = decodeURIComponent(u.href).match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (placeMatch) return [`${placeMatch[1]},${placeMatch[2]}`];
+      throw new Error('Não encontrei uma rota (origem/destino) nesse link. Confirme que é um link de rota do Google Maps.');
+    }
+    const segment = m[1];
+    const rawParts = [];
+    for (const part of segment.split('/')) {
+      if (!part || part.startsWith('@') || part.startsWith('data=')) break;
+      rawParts.push(part);
+    }
+    if (rawParts.length < 2) throw new Error('Encontrei menos de 2 pontos nesse link.');
+    return rawParts;
+  }
+
+  async function resolveWaypoint(raw) {
+    const m = raw.match(/^(-?\d+\.\d+),(-?\d+\.\d+)$/);
+    if (m) return [parseFloat(m[1]), parseFloat(m[2])];
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(raw)}`);
+    if (!resp.ok) throw new Error(`Falha ao localizar "${raw}".`);
+    const data = await resp.json();
+    if (!data.length) throw new Error(`Não encontrei o local "${raw}". Tente usar coordenadas diretas no link.`);
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  }
+
+  const OSRM_PROFILES = {
+    cycling: 'https://routing.openstreetmap.de/routed-bike/route/v1/bike',
+    running: 'https://routing.openstreetmap.de/routed-foot/route/v1/foot',
+    walking: 'https://routing.openstreetmap.de/routed-foot/route/v1/foot',
+  };
+
+  async function routeViaOsrm(waypoints, sport) {
+    const base = OSRM_PROFILES[sport] || OSRM_PROFILES.cycling;
+    const coords = waypoints.map(([lat, lon]) => `${lon},${lat}`).join(';');
+    const resp = await fetch(`${base}/${coords}?overview=full&geometries=geojson`);
+    if (!resp.ok) throw new Error('O serviço de roteamento não respondeu.');
+    const data = await resp.json();
+    if (data.code !== 'Ok') throw new Error(data.message || ('Erro de roteamento: ' + data.code));
+    return data.routes[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+  }
+
+  // =========================================================================
+  // 4. INTERFACE
+  // =========================================================================
+  const tabs = document.querySelectorAll('.tab');
+  const contents = document.querySelectorAll('.tab-content');
+  let activeTab = 'kml';
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.setAttribute('aria-selected', 'false'));
+      tab.setAttribute('aria-selected', 'true');
+      activeTab = tab.dataset.tab;
+      contents.forEach(c => c.classList.toggle('active', c.dataset.tab === activeTab));
+      document.getElementById('routeRoadsRow').style.opacity = (activeTab === 'url' || activeTab === 'points') ? '1' : '0.45';
+      document.getElementById('routeRoads').disabled = !(activeTab === 'url' || activeTab === 'points');
+    });
+  });
+  document.getElementById('routeRoadsRow').style.opacity = '1';
+
+  function setupDropzone(zoneId, inputId, fileNameId, onFile) {
+    const zone = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    const fileNameEl = document.getElementById(fileNameId);
+
+    const handle = (file) => {
+      if (!file) return;
+      fileNameEl.textContent = file.name;
+      const reader = new FileReader();
+      reader.onload = () => onFile(reader.result, file.name);
+      reader.onerror = () => setStatus('Não consegui ler esse arquivo no navegador.', 'error');
+      reader.readAsText(file);
+    };
+
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') input.click(); });
+    input.addEventListener('change', () => handle(input.files[0]));
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      handle(e.dataTransfer.files[0]);
+    });
+  }
+
+  let kmlText = null, gpxText = null;
+  setupDropzone('dropzone-kml', 'file-kml', 'filename-kml', (text) => { kmlText = text; });
+  setupDropzone('dropzone-gpx', 'file-gpx', 'filename-gpx', (text) => { gpxText = text; });
+
+  const statusEl = document.getElementById('status');
+  function setStatus(msg, kind) {
+    if (!msg) { statusEl.className = 'status'; statusEl.textContent = ''; return; }
+    statusEl.className = 'status show ' + (kind || 'info');
+    statusEl.textContent = msg;
+  }
+
+  function slugify(name) {
+    return (name || 'rota').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'rota';
+  }
+
+  function renderPreview(points) {
+    const svg = document.getElementById('previewSvg');
+    svg.innerHTML = '';
+    const lats = points.map(p => p[0]), lons = points.map(p => p[1]);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+    const padding = 14, w = 400, h = 130;
+    const spanLat = (maxLat - minLat) || 0.0001, spanLon = (maxLon - minLon) || 0.0001;
+    const scale = Math.min((w - padding * 2) / spanLon, (h - padding * 2) / spanLat);
+    const toXY = ([lat, lon]) => {
+      const x = padding + (lon - minLon) * scale;
+      const y = h - padding - (lat - minLat) * scale;
+      return [x, y];
+    };
+    const step = Math.max(1, Math.floor(points.length / 300));
+    let d = '';
+    for (let i = 0; i < points.length; i += step) {
+      const [x, y] = toXY(points[i]);
+      d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+    }
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d.trim());
+    svg.appendChild(path);
+    const [sx, sy] = toXY(points[0]);
+    const [ex, ey] = toXY(points[points.length - 1]);
+    for (const [cx, cy] of [[sx, sy], [ex, ey]]) {
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', 4);
+      svg.appendChild(c);
+    }
+  }
+
+  let currentGpxUrl = null, currentFitUrl = null;
+
+  function showResult(points, routeName) {
+    const dist = totalDistance(points);
+    document.getElementById('statDistance').textContent = (dist / 1000).toFixed(2) + ' km';
+    document.getElementById('statPoints').textContent = points.length;
+    renderPreview(points);
+
+    const gpxStr = buildGpx(points, routeName);
+    const { bytes: fitBytes } = buildFitCourse(points, { sport: document.getElementById('sport').value, name: routeName });
+
+    if (currentGpxUrl) URL.revokeObjectURL(currentGpxUrl);
+    if (currentFitUrl) URL.revokeObjectURL(currentFitUrl);
+
+    const gpxBlob = new Blob([gpxStr], { type: 'application/gpx+xml' });
+    const fitBlob = new Blob([fitBytes], { type: 'application/octet-stream' });
+    currentGpxUrl = URL.createObjectURL(gpxBlob);
+    currentFitUrl = URL.createObjectURL(fitBlob);
+
+    const slug = slugify(routeName);
+    const gpxLink = document.getElementById('downloadGpx');
+    const fitLink = document.getElementById('downloadFit');
+    gpxLink.href = currentGpxUrl; gpxLink.download = slug + '.gpx';
+    fitLink.href = currentFitUrl; fitLink.download = slug + '.fit';
+
+    document.getElementById('result').classList.add('show');
+  }
+
+  document.getElementById('generateBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('generateBtn');
+    const routeName = document.getElementById('routeName').value.trim() || 'Rota';
+    const sport = document.getElementById('sport').value;
+    const followRoads = document.getElementById('routeRoads').checked;
+
+    btn.disabled = true;
+    document.getElementById('result').classList.remove('show');
+    setStatus('Processando…', 'info');
+
+    try {
+      let points;
+
+      if (activeTab === 'kml') {
+        if (!kmlText) throw new Error('Solte ou escolha um arquivo .kml primeiro.');
+        points = parseKmlText(kmlText);
+
+      } else if (activeTab === 'gpx') {
+        if (!gpxText) throw new Error('Solte ou escolha um arquivo .gpx primeiro.');
+        points = parseGpxText(gpxText);
+
+      } else if (activeTab === 'points') {
+        const raw = document.getElementById('input-points').value;
+        if (!raw.trim()) throw new Error('Cole pelo menos 2 coordenadas.');
+        points = parsePointsText(raw);
+        if (followRoads) {
+          setStatus('Recalculando trajeto pelas vias…', 'info');
+          try { points = await routeViaOsrm(points, sport); }
+          catch (e) { setStatus('Não consegui ajustar às vias (' + e.message + '). Usando os pontos em linha reta.', 'error'); }
+        }
+
+      } else if (activeTab === 'url') {
+        const raw = document.getElementById('input-url').value;
+        if (!raw.trim()) throw new Error('Cole o link da rota do Google Maps.');
+        const rawWaypoints = parseMapsUrlRaw(raw);
+        setStatus('Localizando pontos do link…', 'info');
+        points = [];
+        for (const wp of rawWaypoints) points.push(await resolveWaypoint(wp));
+        if (followRoads) {
+          setStatus('Recalculando trajeto pelas vias…', 'info');
+          try { points = await routeViaOsrm(points, sport); }
+          catch (e) { setStatus('Não consegui ajustar às vias (' + e.message + '). Usando os pontos em linha reta.', 'error'); }
+        }
+      }
+
+      if (!points || points.length < 2) throw new Error('Não há pontos suficientes para gerar uma rota.');
+
+      showResult(points, routeName);
+      if (!statusEl.classList.contains('error')) setStatus('Pronto. Os arquivos estão abaixo.', 'info');
+
+    } catch (err) {
+      setStatus(err.message || 'Algo deu errado ao processar a rota.', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+})();
+</script>
+
+</body>
+</html>

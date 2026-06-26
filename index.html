@@ -187,6 +187,20 @@
     word-break: break-all;
   }
 
+  .kml-path-picker { margin-top: 14px; }
+  .kml-path-option {
+    display: block;
+    padding: 9px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    background: var(--paper);
+  }
+  .kml-path-option:hover { border-color: var(--trail); }
+  .kml-path-option input { margin-right: 8px; }
+
   textarea, input[type="text"] {
     width: 100%;
     font-family: var(--font-mono);
@@ -377,6 +391,10 @@
         <span class="text">Arraste o arquivo .kml aqui ou clique para escolher</span>
         <div class="filename" id="filename-kml"></div>
         <input type="file" id="file-kml" accept=".kml" hidden>
+      </div>
+      <div class="kml-path-picker" id="kmlPathPicker" style="display:none;">
+        <p class="hint" style="margin-bottom:8px;">Esse KML tem mais de um trajeto. Escolha qual usar (selecionei o mais longo por padrão):</p>
+        <div id="kmlPathList"></div>
       </div>
     </div>
 
@@ -710,23 +728,50 @@
   // =========================================================================
   // 3. PARSERS DE ENTRADA
   // =========================================================================
-  function parseKmlText(text) {
-    const dom = new DOMParser().parseFromString(text, 'text/xml');
-    if (dom.querySelector('parsererror')) throw new Error('Não consegui ler esse KML. Confirme que o arquivo não está corrompido.');
-    const coordEls = dom.getElementsByTagName('coordinates');
-    const points = [];
-    for (const el of coordEls) {
-      const chunks = el.textContent.trim().split(/\s+/);
+  function extractCoordPoints(node) {
+    const pts = [];
+    const coordEls = node.getElementsByTagName('coordinates');
+    for (let i = 0; i < coordEls.length; i++) {
+      const chunks = coordEls[i].textContent.trim().split(/\s+/);
       for (const c of chunks) {
         const parts = c.split(',');
         if (parts.length >= 2) {
           const lon = parseFloat(parts[0]), lat = parseFloat(parts[1]);
-          if (!isNaN(lat) && !isNaN(lon)) points.push([lat, lon]);
+          if (!isNaN(lat) && !isNaN(lon)) pts.push([lat, lon]);
         }
       }
     }
-    if (!points.length) throw new Error('Não encontrei coordenadas nesse KML. Confirme que a camada exportada é uma rota (linha), não só marcadores soltos.');
-    return points;
+    return pts;
+  }
+
+  // Retorna uma lista de trajetos separados (um por Placemark com linha),
+  // em vez de misturar tudo numa única sequência de pontos. Isso evita que
+  // duas linhas distintas do mesmo KML (ex: "ida" e uma linha reta solta)
+  // sejam coladas uma na outra formando um trecho reto artificial.
+  function parseKmlPaths(text) {
+    const dom = new DOMParser().parseFromString(text, 'text/xml');
+    if (dom.querySelector && dom.querySelector('parsererror')) {
+      throw new Error('Não consegui ler esse KML. Confirme que o arquivo não está corrompido.');
+    }
+    const placemarks = dom.getElementsByTagName('Placemark');
+    const paths = [];
+    for (let i = 0; i < placemarks.length; i++) {
+      const pm = placemarks[i];
+      const pts = extractCoordPoints(pm);
+      if (pts.length >= 2) {
+        const nameEl = pm.getElementsByTagName('name')[0];
+        const name = (nameEl && nameEl.textContent.trim()) || ('Trajeto ' + (paths.length + 1));
+        paths.push({ name, points: pts });
+      }
+    }
+    if (!paths.length) {
+      const pts = extractCoordPoints(dom);
+      if (pts.length >= 2) paths.push({ name: 'Trajeto', points: pts });
+    }
+    if (!paths.length) {
+      throw new Error('Não encontrei coordenadas nesse KML. Confirme que a camada exportada é uma rota (linha), não só marcadores soltos.');
+    }
+    return paths;
   }
 
   function parseGpxText(text) {
@@ -855,8 +900,47 @@
     });
   }
 
-  let kmlText = null, gpxText = null;
-  setupDropzone('dropzone-kml', 'file-kml', 'filename-kml', (text) => { kmlText = text; });
+  let kmlPaths = null, selectedKmlIndex = 0, gpxText = null;
+
+  function handleKmlFile(text) {
+    const picker = document.getElementById('kmlPathPicker');
+    const list = document.getElementById('kmlPathList');
+    list.innerHTML = '';
+    try {
+      const paths = parseKmlPaths(text);
+      kmlPaths = paths;
+      selectedKmlIndex = 0;
+
+      if (paths.length > 1) {
+        let maxDist = -1;
+        paths.forEach((p, idx) => {
+          const d = totalDistance(p.points);
+          if (d > maxDist) { maxDist = d; selectedKmlIndex = idx; }
+        });
+        paths.forEach((p, idx) => {
+          const km = (totalDistance(p.points) / 1000).toFixed(2);
+          const row = document.createElement('label');
+          row.className = 'kml-path-option';
+          row.innerHTML = `<input type="radio" name="kmlpath" value="${idx}" ${idx === selectedKmlIndex ? 'checked' : ''}>${escapeXml(p.name)} — ${km} km, ${p.points.length} pontos`;
+          list.appendChild(row);
+        });
+        picker.style.display = 'block';
+        list.querySelectorAll('input[name="kmlpath"]').forEach(inp => {
+          inp.addEventListener('change', (e) => { selectedKmlIndex = parseInt(e.target.value, 10); });
+        });
+        setStatus(`Encontrei ${paths.length} trajetos separados nesse KML — selecionei o mais longo por padrão. Se não for o certo, escolha outro na lista acima (isso evita ligar dois trajetos diferentes com uma linha reta).`, 'info');
+      } else {
+        picker.style.display = 'none';
+        setStatus(null);
+      }
+    } catch (e) {
+      kmlPaths = null;
+      picker.style.display = 'none';
+      setStatus(e.message, 'error');
+    }
+  }
+
+  setupDropzone('dropzone-kml', 'file-kml', 'filename-kml', (text) => { handleKmlFile(text); });
   setupDropzone('dropzone-gpx', 'file-gpx', 'filename-gpx', (text) => { gpxText = text; });
 
   const statusEl = document.getElementById('status');
@@ -946,8 +1030,8 @@
       let points;
 
       if (activeTab === 'kml') {
-        if (!kmlText) throw new Error('Solte ou escolha um arquivo .kml primeiro.');
-        points = parseKmlText(kmlText);
+        if (!kmlPaths) throw new Error('Solte ou escolha um arquivo .kml primeiro.');
+        points = kmlPaths[selectedKmlIndex].points;
 
       } else if (activeTab === 'gpx') {
         if (!gpxText) throw new Error('Solte ou escolha um arquivo .gpx primeiro.');

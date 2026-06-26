@@ -164,6 +164,7 @@
   }
 
   .dropzone {
+    display: block;
     border: 1.5px dashed var(--line);
     border-radius: var(--radius);
     padding: 26px 16px;
@@ -185,6 +186,17 @@
     color: var(--trail-deep);
     margin-top: 8px;
     word-break: break-all;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    white-space: nowrap;
+    border: 0;
   }
 
   .kml-path-picker { margin-top: 14px; }
@@ -386,12 +398,12 @@
 
     <div class="tab-content active" data-tab="kml">
       <p class="hint">No Google My Maps (mymaps.google.com): Menu ☰ → <strong>Exportar para KML/KMZ</strong> → exporte como <strong>KML</strong>. É a forma mais precisa, porque já traz o trajeto seguindo as ruas exatamente como no mapa.</p>
-      <div class="dropzone" id="dropzone-kml" tabindex="0" role="button">
+      <label class="dropzone" id="dropzone-kml" for="file-kml" tabindex="0">
         <span class="icon">📍</span>
-        <span class="text">Arraste o arquivo .kml aqui ou clique para escolher</span>
+        <span class="text">Arraste o arquivo .kml aqui ou toque para escolher</span>
         <div class="filename" id="filename-kml"></div>
-        <input type="file" id="file-kml" accept=".kml" hidden>
-      </div>
+      </label>
+      <input type="file" id="file-kml" class="visually-hidden" accept=".kml,application/vnd.google-earth.kml+xml">
       <div class="kml-path-picker" id="kmlPathPicker" style="display:none;">
         <p class="hint" style="margin-bottom:8px;">Esse KML tem mais de um trajeto. Escolha qual usar (selecionei o mais longo por padrão):</p>
         <div id="kmlPathList"></div>
@@ -410,12 +422,12 @@
 
     <div class="tab-content" data-tab="gpx">
       <p class="hint">Já tem um arquivo GPX? Solte aqui para gerar o .FIT correspondente (e um .GPX limpo, se precisar).</p>
-      <div class="dropzone" id="dropzone-gpx" tabindex="0" role="button">
+      <label class="dropzone" id="dropzone-gpx" for="file-gpx" tabindex="0">
         <span class="icon">🧭</span>
-        <span class="text">Arraste o arquivo .gpx aqui ou clique para escolher</span>
+        <span class="text">Arraste o arquivo .gpx aqui ou toque para escolher</span>
         <div class="filename" id="filename-gpx"></div>
-        <input type="file" id="file-gpx" accept=".gpx" hidden>
-      </div>
+      </label>
+      <input type="file" id="file-gpx" class="visually-hidden" accept=".gpx,application/gpx+xml">
     </div>
 
     <div class="options-row">
@@ -888,8 +900,7 @@
       reader.readAsText(file);
     };
 
-    zone.addEventListener('click', () => input.click());
-    zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') input.click(); });
+    zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
     input.addEventListener('change', () => handle(input.files[0]));
     zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
     zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));

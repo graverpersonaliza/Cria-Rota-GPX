@@ -266,6 +266,55 @@
 
   .checkbox-row input { margin-top: 3px; }
 
+  .premium-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 1px 7px;
+    border-radius: 99px;
+    margin-left: 6px;
+    background: var(--paper-deep);
+    color: var(--ink-soft);
+    border: 1px solid var(--line);
+    vertical-align: middle;
+  }
+  .premium-badge.active {
+    background: var(--trail);
+    color: #fff;
+    border-color: var(--trail);
+  }
+
+  .premium-unlock {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .premium-unlock input[type="text"] {
+    max-width: 200px;
+    padding: 9px 10px;
+    font-size: 13px;
+  }
+  .premium-unlock button {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 13px;
+    padding: 9px 16px;
+    border-radius: 8px;
+    border: 1.5px solid var(--trail);
+    background: var(--paper-card);
+    color: var(--trail-deep);
+    cursor: pointer;
+  }
+  .premium-unlock button:hover { background: var(--trail); color: #fff; }
+
+  .premium-msg { font-size: 12.5px; }
+  .premium-msg.error { color: var(--danger); }
+  .premium-msg.success { color: var(--trail-deep); font-weight: 600; }
+
   .action-row {
     padding: 0 22px 22px;
   }
@@ -444,8 +493,13 @@
         </select>
       </div>
       <div class="checkbox-row" id="routeRoadsRow">
-        <input type="checkbox" id="routeRoads">
-        <label for="routeRoads">Ajustar trajeto às vias automaticamente (recalcula pelo OSRM — requer internet; use só para "Link do Maps" e "Pontos manuais")</label>
+        <input type="checkbox" id="routeRoads" disabled>
+        <label for="routeRoads">Ajustar trajeto às vias automaticamente (recalcula pelo OSRM — requer internet; use só para "Link do Maps" e "Pontos manuais")<span class="premium-badge" id="premiumBadge">🔒 Premium</span></label>
+      </div>
+      <div class="premium-unlock" id="premiumUnlock">
+        <input type="text" id="premiumCodeInput" placeholder="Código de acesso">
+        <button type="button" id="premiumActivateBtn">Ativar</button>
+        <span class="premium-msg" id="premiumMsg"></span>
       </div>
     </div>
 
@@ -870,6 +924,76 @@
   }
 
   // =========================================================================
+  // 3.5 PREMIUM (código de acesso simples, sem servidor)
+  // =========================================================================
+  // Como funciona: o código em si NUNCA fica no código-fonte, só o hash SHA-256
+  // dele. Quando alguém digita um código, calculamos o hash e comparamos com a
+  // lista abaixo. Isso evita que qualquer pessoa abra o "Ver código-fonte" e
+  // veja os códigos válidos em texto puro — mas não é uma proteção definitiva
+  // (é client-side), só dificulta. Gere novos códigos/hashes em gerador-codigo.html.
+  const PREMIUM_STORAGE_KEY = 'trilha_premium_unlocked';
+  const PREMIUM_CODE_HASHES = [
+    '37727cb9abb525eeb9bd45f70b66976f606f6cf323d7b983b86d16a1f709be85', // código de demonstração: TRILHA-DEMO-2026 (troque pelos seus)
+  ];
+
+  async function sha256Hex(text) {
+    const enc = new TextEncoder().encode(text);
+    const buf = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function normalizeCode(code) {
+    return code.trim().toUpperCase().replace(/\s+/g, '');
+  }
+
+  function isPremiumUnlocked() {
+    return localStorage.getItem(PREMIUM_STORAGE_KEY) === '1';
+  }
+
+  function updateRouteRoadsAvailability() {
+    const checkbox = document.getElementById('routeRoads');
+    const badge = document.getElementById('premiumBadge');
+    const unlockBox = document.getElementById('premiumUnlock');
+    const row = document.getElementById('routeRoadsRow');
+    const relevantTab = (activeTab === 'url' || activeTab === 'points');
+    const unlocked = isPremiumUnlocked();
+
+    row.style.opacity = relevantTab ? '1' : '0.45';
+    checkbox.disabled = !(relevantTab && unlocked);
+    if (!unlocked) checkbox.checked = false;
+
+    if (unlocked) {
+      badge.textContent = '✓ Premium ativo';
+      badge.classList.add('active');
+      unlockBox.style.display = 'none';
+    } else {
+      badge.textContent = '🔒 Premium';
+      badge.classList.remove('active');
+      unlockBox.style.display = relevantTab ? 'flex' : 'none';
+    }
+  }
+
+  document.getElementById('premiumActivateBtn').addEventListener('click', async () => {
+    const msg = document.getElementById('premiumMsg');
+    const input = document.getElementById('premiumCodeInput');
+    const code = normalizeCode(input.value);
+    if (!code) { msg.textContent = 'Digite um código.'; msg.className = 'premium-msg error'; return; }
+    msg.textContent = 'Verificando…'; msg.className = 'premium-msg';
+    const hash = await sha256Hex(code);
+    if (PREMIUM_CODE_HASHES.includes(hash)) {
+      localStorage.setItem(PREMIUM_STORAGE_KEY, '1');
+      msg.textContent = '';
+      updateRouteRoadsAvailability();
+    } else {
+      msg.textContent = 'Código inválido.';
+      msg.className = 'premium-msg error';
+    }
+  });
+  document.getElementById('premiumCodeInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('premiumActivateBtn').click();
+  });
+
+  // =========================================================================
   // 4. INTERFACE
   // =========================================================================
   const tabs = document.querySelectorAll('.tab');
@@ -882,11 +1006,10 @@
       tab.setAttribute('aria-selected', 'true');
       activeTab = tab.dataset.tab;
       contents.forEach(c => c.classList.toggle('active', c.dataset.tab === activeTab));
-      document.getElementById('routeRoadsRow').style.opacity = (activeTab === 'url' || activeTab === 'points') ? '1' : '0.45';
-      document.getElementById('routeRoads').disabled = !(activeTab === 'url' || activeTab === 'points');
+      updateRouteRoadsAvailability();
     });
   });
-  document.getElementById('routeRoadsRow').style.opacity = '1';
+  updateRouteRoadsAvailability();
 
   function setupDropzone(zoneId, inputId, fileNameId, onFile) {
     const zone = document.getElementById(zoneId);
